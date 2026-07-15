@@ -1,0 +1,18 @@
+[sources.docker_logs]
+  type = "docker_logs"
+  docker_host = "unix:///var/run/docker.sock"
+
+[transforms.parse]
+  type = "remap"
+  inputs = ["docker_logs"]
+  source = '''
+    .timestamp = parse_timestamp!(.timestamp, format: "%Y-%m-%dT%H:%M:%S%.fZ")
+    .service = .container_name
+    .level = upcase!(.message)
+  '''
+
+[sinks.elasticsearch]
+  type = "elasticsearch"
+  inputs = ["parse"]
+  endpoints = ["http://elasticsearch:9200"]
+  bulk.index = "vector-{{strftime now format='%Y.%m.%d'}}"

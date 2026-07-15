@@ -1,0 +1,27 @@
+{
+  "dashboard": {
+    "title": "Microservices Request Distribution",
+    "panels": [
+      {
+        "title": "Requests per Service",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (job)",
+            "legendFormat": "{{job}}"
+          }
+        ]
+      },
+      {
+        "title": "Request Duration p95",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
+            "legendFormat": "{{job}}"
+          }
+        ]
+      }
+    ]
+  }
+}
