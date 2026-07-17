@@ -4,17 +4,15 @@
 
 ### Архитектура
 
-```
-[Разработчик] ──git push──► [GitLab (облако)]
-                                  │
-                                  ├── Git-репозитории (1 репо на сервис)
-                                  ├── .gitlab-ci.yml (конфигурация пайплайна)
-                                  └── CI/CD Runners
-                                       │
-                                       ├── Shared Runners (облачные)
-                                       └── Private Runners (собственные серверы)
-                                            │
-                                            └── [Docker Registry]
+```mermaid
+flowchart LR
+    Dev[Разработчик] -->|git push| GitLab[GitLab Cloud]
+    GitLab --> Repos[Git-репозитории]
+    GitLab --> CI[.gitlab-ci.yml]
+    GitLab --> Runners[CI/CD Runners]
+    Runners --> Shared[Shared — облачные]
+    Runners --> Private[Private — свои серверы]
+    Private --> Registry[Docker Registry]
 ```
 
 ### Соответствие требованиям
@@ -50,8 +48,11 @@ GitLab закрывает всё: хранение кода, сборку, хр�
 
 ### Архитектура
 
-```
-[Сервисы (stdout)] ──► [Fluent Bit (DaemonSet)] ──► [Elasticsearch] ──► [Kibana :5601]
+```mermaid
+flowchart LR
+    Services[Сервисы stdout] --> FluentBit[Fluent Bit DaemonSet]
+    FluentBit --> ES[Elasticsearch]
+    ES --> Kibana[Kibana :5601]
 ```
 
 ### Выбор компонентов
@@ -84,11 +85,13 @@ GitLab закрывает всё: хранение кода, сборку, хр�
 
 ### Архитектура
 
-```
-[Сервисы /metrics] ──► [Prometheus (pull)] ──► [Grafana :3000]
-       │                      │
-       │                      ├── Recording Rules
-       └── [Node Exporter]    └── Alertmanager
+```mermaid
+flowchart LR
+    Services[Сервисы /metrics] --> Prometheus[Prometheus pull]
+    NE[Node Exporter] --> Prometheus
+    Prometheus --> Grafana[Grafana :3000]
+    Prometheus --> Rules[Recording Rules]
+    Prometheus --> Alertmanager[Alertmanager]
 ```
 
 ### Выбор компонентов
@@ -126,15 +129,15 @@ Vector работает как более производительный и г
 
 ### Архитектура
 
-```
-[Clients] ──► [Nginx Gateway :80] ──┬──► [Security :3000]
-                                     ├──► [Uploader :3000] ──► [MinIO :9000]
-                                     │
-[Vector] ──docker.sock──► Docker     │
-    │                               │
-    └──► [Elasticsearch :9200] ◄────┘
-              │
-              └──► [Kibana :8081] ◄── (admin / qwerty123456)
+```mermaid
+flowchart LR
+    Clients[Clients] --> Nginx[Nginx Gateway :80]
+    Nginx --> Security[Security :3000]
+    Nginx --> Uploader[Uploader :3000]
+    Uploader --> MinIO[MinIO :9000]
+    Vector[Vector] -->|docker.sock| Docker[Docker]
+    Docker --> ES[Elasticsearch :9200]
+    ES --> Kibana[Kibana :8081]
 ```
 
 ### Компоненты
@@ -188,17 +191,17 @@ docker-compose down -v
 
 ### Архитектура
 
-```
-[Clients] ──► [Nginx Gateway :80] ──┬──► [Security :3000] ──/metrics──►
-                                     ├──► [Uploader :3000] ──/metrics──► [Prometheus :9090]
-                                     │                                       │
-[Node Exporter :9100] ───────────────┘                                       │
-[cAdvisor :8080] ──────────────────────/metrics─────────────────────────────►│
-                                                                             │
-[Storage (MinIO) :9000] ──/minio/v2/metrics/cluster────────────────────────►│
-                                                                             │
-                                                      [Grafana :8081] ◄─────┘
-                                                      (admin / qwerty123456)
+```mermaid
+flowchart LR
+    Clients[Clients] --> Nginx[Nginx Gateway :80]
+    Nginx --> Security[Security :3000]
+    Nginx --> Uploader[Uploader :3000]
+    NE[Node Exporter :9100] --> Prometheus[Prometheus :9090]
+    cAdvisor[cAdvisor :8080] --> Prometheus
+    MinIO[MinIO :9000] --> Prometheus
+    Security -->|/metrics| Prometheus
+    Uploader -->|/metrics| Prometheus
+    Prometheus --> Grafana[Grafana :8081]
 ```
 
 ### Компоненты
