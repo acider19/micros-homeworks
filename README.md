@@ -131,13 +131,23 @@ Vector работает как более производительный и г
 
 ```mermaid
 flowchart LR
-    Clients[Clients] --> Nginx[Nginx Gateway :80]
-    Nginx --> Security[Security :3000]
-    Nginx --> Uploader[Uploader :3000]
-    Uploader --> MinIO[MinIO :9000]
-    Vector[Vector] -->|docker.sock| Docker[Docker]
-    Docker --> ES[Elasticsearch :9200]
-    ES --> Kibana[Kibana :8081]
+    subgraph api ["API"]
+        Clients --> Nginx[:80]
+        Nginx --> Security[:3000]
+        Nginx --> Uploader[:3000]
+        Uploader --> MinIO[:9000]
+    end
+
+    subgraph logs ["Сбор логов"]
+        Vector -->|docker.sock| Docker
+        Docker --> ES[Elasticsearch :9200]
+        ES --> Kibana[Kibana :8081]
+    end
+
+    Security -.->|stdout| Docker
+    Uploader -.->|stdout| Docker
+    Nginx -.->|stdout| Docker
+    MinIO -.->|stdout| Docker
 ```
 
 ### Компоненты
@@ -151,12 +161,6 @@ flowchart LR
 | Security | Аутентификация | JWT-токены для доступа к API |
 | Uploader | Загрузка файлов | Приём изображений и сохранение в MinIO |
 | MinIO | Хранение файлов | S3-совместимое хранилище для загруженных изображений |
-
-### Исправления при тестировании
-
-- Добавлен `VECTOR_CONFIG=/etc/vector/vector.toml` в docker-compose — без этого Vector ищет конфиг в `/etc/vector/vector.yaml`
-- Исправлен синтаксис шаблона в `bulk.index` Vector: `strftime now format` → `%F`
-- Добавлен `del(.label)` в VRL-transform — поля Docker labels содержат точки в именах (`label.com.docker.compose.project`), что вызывает конфликт маппингов в Elasticsearch
 
 ### Как проверить
 
@@ -193,15 +197,21 @@ docker-compose down -v
 
 ```mermaid
 flowchart LR
-    Clients[Clients] --> Nginx[Nginx Gateway :80]
-    Nginx --> Security[Security :3000]
-    Nginx --> Uploader[Uploader :3000]
-    NE[Node Exporter :9100] --> Prometheus[Prometheus :9090]
-    cAdvisor[cAdvisor :8080] --> Prometheus
-    MinIO[MinIO :9000] --> Prometheus
-    Security -->|/metrics| Prometheus
-    Uploader -->|/metrics| Prometheus
-    Prometheus --> Grafana[Grafana :8081]
+    subgraph api ["API"]
+        Clients --> Nginx[:80]
+        Nginx --> Security[:3000]
+        Nginx --> Uploader[:3000]
+    end
+
+    subgraph metrics ["Сбор метрик"]
+        Prometheus[Prometheus :9090] --> Grafana[Grafana :8081]
+        NE[Node Exporter :9100] --> Prometheus
+        cAdvisor[cAdvisor :8080] --> Prometheus
+        MinIO[MinIO :9000] -->|/minio/v2/metrics/cluster| Prometheus
+    end
+
+    Security -.->|/metrics| Prometheus
+    Uploader -.->|/metrics| Prometheus
 ```
 
 ### Компоненты
@@ -215,11 +225,6 @@ flowchart LR
 | Security | Метрики /metrics | Собственные метрики HTTP-запросов (счётчики, гистограммы) |
 | Uploader | Метрики /metrics | Собственные метрики HTTP-запросов и загрузок |
 | Nginx Gateway | API-шлюз | Проксирует запросы к backend-сервисам |
-
-### Исправления при тестировании
-
-- Имя сервиса minio исправлено с `minio:9000` на `storage:9000` в `prometheus.yml` — имя контейнера не совпадает с именем сервиса в docker-compose
-- Prometheus скрейпит security и uploader по порту 3000 (而不是 5000/5001)
 
 ### Дашборд Grafana
 
