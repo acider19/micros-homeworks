@@ -1,0 +1,8 @@
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "6390:6390"
+      - "9901:9901"
