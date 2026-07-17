@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: envoy
+    metrics_path: /stats
+    params:
+      format: [prometheus]
+    static_configs:
+      - targets:
+          - host.docker.internal:9901
+        labels:
+          source: envoy
+
+  - job_name: redis
+    static_configs:
+      - targets:
+          - redis-exporter-master:9121
+        labels:
+          role: master
+      - targets:
+          - redis-exporter-replica:9122
+        labels:
+          role: replica

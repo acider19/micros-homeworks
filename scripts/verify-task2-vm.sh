@@ -20,7 +20,7 @@ curl -s 'http://localhost:9901/stats?usedonly' | grep -E "redis|cluster" | grep 
 
 echo ""
 echo "=== Остановка ==="
-cd src_2_vm && docker compose down
+cd src && docker compose down
 cd ..
 
 echo ""

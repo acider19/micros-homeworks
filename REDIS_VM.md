@@ -12,22 +12,6 @@
 
 ---
 
-## Почему VM, а не Docker-контейнеры
-
-Docker-контейнеры — это процесс в изоляции. У них общий kernel с хостом, свой внутренний IP в Docker-сети, которого снаружи не видно. Для быстрого прототипа — ок.
-
-OrbStack VM — это полноценная Linux-машина. Своё ядро, свой IP, которая видна между VM и с macOS. Это ближе к тому, как устроены реальные сервера в продакшене.
-
-| | Docker-контейнер | OrbStack VM |
-|---|---|---|
-| Что это | Процесс в изоляции | Полноценная Linux-машина |
-| IP-адрес | Внутренний, не виден снаружи | Настоящий IP на bridge-сети |
-| Запуск | Мгновенно | ~2 секунды |
-
-Задание предполагает **3 отдельных сервера**. Docker-контейнеры на macOS — упрощение. VM показывают реальную картину.
-
----
-
 ## Почему Envoy, а не HAProxy
 
 **HAProxy** — хороший балансировщик, но он работает на TCP-уровне. Он не понимает протокол Redis Cluster. Когда клиент отправляет `SET key value`, а Redis отвечает `MOVED 9410 192.168.139.59:6379` — «эти данные на другом сервере, иди туда» — HAProxy просто пробрасывает этот ответ клиенту. Клиент должен сам разбираться.
@@ -117,76 +101,23 @@ Redis Cluster делит ключи на **слоты** — от 0 до 16383. �
 
 ---
 
-## Конфигурация
+## Что такое MOVED/ASK
 
-### Envoy (`src_2_vm/envoy.yaml`)
+Когда клиент отправляет запрос не на ту ноду, Redis отвечает:
 
-```yaml
-# Админ-интерфейс: curl localhost:9901/stats
-admin:
-  address:
-    socket_address:
-      address: 0.0.0.0
-      port_value: 9901
-
-static_resources:
-  listeners:
-  - name: redis_listener
-    address:
-      socket_address:
-        address: 0.0.0.0
-        port_value: 6390         # сюда подключается клиент
-    filter_chains:
-    - filters:
-      - name: envoy.filters.network.redis_proxy
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.filters.network.redis_proxy.v3.RedisProxy
-          stat_prefix: redis_proxy
-          settings:
-            op_timeout: 5s
-            enable_redirection: true   # Envoy сам обрабатывает MOVED/ASK
-          prefix_routes:
-            catch_all_route:
-              cluster: redis_cluster
-
-  clusters:
-  - name: redis_cluster
-    connect_timeout: 3s
-    cluster_type:
-      name: envoy.clusters.redis      # вот это ключевое — Redis Cluster mode
-      typed_config:
-        "@type": type.googleapis.com/envoy.extensions.clusters.redis.v3.RedisClusterConfig
-        cluster_refresh_rate: 30s     # как часто опрашивать CLUSTER SLOTS
-    load_assignment:
-      cluster_name: redis_cluster
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: <VM1-IP>     # seed-ноды
-                port_value: 6379
-        - endpoint:
-            address:
-              socket_address:
-                address: <VM2-IP>
-                port_value: 6379
-        - endpoint:
-            address:
-              socket_address:
-                address: <VM3-IP>
-                port_value: 6379
+```
+MOVED 9410 192.168.139.59:6379
 ```
 
-На что обратить внимание:
+Это значит: «данные для этого ключа на слоте 9410, иди на 192.168.139.59:6379».
 
-- `cluster_type: envoy.clusters.redis` — без этого Envoy думает, что это обычный TCP-бэкенд
-- `enable_redirection: true` — иначе `MOVED` уходит клиенту, а Envoy должен обрабатывать сам
-- Seed-ноды — входные точки. Envoy подключается к ним и через `CLUSTER SLOTS` узнаёт обо всём кластере
+**Без Envoy** клиент должен сам переподключиться и повторить запрос. Флаг `-c` в `redis-cli` делает это автоматически, но обычное приложение — нет.
 
-### Redis на каждой VM
+**С Envoy** прозрачно: Envoy видит `MOVED`, перенаправляет запрос на правильную ноду и возвращает клиенту `OK`. Клиент ничего не знает про слоты и шарды.
 
-Каждая VM запускает **два** процесса Redis:
+---
+
+## Распределение ролей по VM
 
 | VM | Порт | Роль |
 |---|---|---|
@@ -197,73 +128,7 @@ static_resources:
 | redis-vm3 | 6379 | Мастер Shard 3 |
 | redis-vm3 | 6380 | Реплика Shard 1 |
 
-Конфиг каждого инстанса — минимум:
-
-```
-protected-mode no    -- разрешаем внешние подключения
-bind 0.0.0.0         -- слушаем на всех интерфейсах
-port 6379            -- порт
-cluster-enabled yes  -- режим кластера
-```
-
----
-
-## Пошаговая инструкция
-
-### Шаг 1: Создать VM и поставить Redis
-
-```bash
-bash scripts/redis_vm/setup-vm-redis.sh
-```
-
-Что делает:
-1. Создаёт 3 Ubuntu VM через OrbStack
-2. Ставит Redis на каждой
-3. Создаёт по два конфига на каждой VM (мастер + реплика)
-4. Запускает Redis
-5. Проверяет, что все 6 нод отвечают на PING
-
-### Шаг 2: Собрать кластер и запустить Envoy
-
-```bash
-bash scripts/redis_vm/create-cluster-vm.sh
-```
-
-Что делает:
-1. Узнаёт IP каждой VM
-2. Создаёт кластер — говорит каждой ноде: «вот твои соседи, общайтесь»
-3. Каждая нода получает свой диапазон слотов
-4. Реплики привязываются к мастерам
-5. Запускает Envoy через Docker
-
-### Шаг 3: Проверить
-
-```bash
-bash scripts/redis_vm/verify-task2-vm.sh
-```
-
-Или руками:
-
-```bash
-# Записываем — клиент не знает про кластер
-redis-cli -p 6390 SET session:user123 "active"
-
-# Читаем
-redis-cli -p 6390 GET session:user123
-# → "active"
-
-# Смотрим метрики Envoy
-curl -s 'http://localhost:9901/stats?usedonly' | grep redis
-```
-
-Что происходит при `SET session:user123 "active"`:
-1. Клиент отправляет на `localhost:6390` (Envoy)
-2. Envoy считает хеш ключа, определяет слот
-3. Смотрит в таблицу: «этот слот на VM2:6379»
-4. Перенаправляет запрос
-5. VM2 сохраняет, отвечает `OK`
-6. Envoy пробрасывает `OK` клиенту
-7. Клиент видит `OK` и не знает, что данные на VM2
+Каждая VM хранит данные двух шардов. Если одна VM упадёт — ни один шард не потеряет все данные, потому что реплика живёт на другой VM.
 
 ---
 
@@ -275,43 +140,11 @@ Envoy отдаёт метрики на `localhost:9901/stats`:
 curl -s 'http://localhost:9901/stats?usedonly' | grep redis
 ```
 
-Что смотреть:
+Ключевые метрики:
 
-- `redis.redis_proxy.command.set.success` — сколько успешных SET
-- `redis.redis_proxy.command.get.success` — сколько успешных GET
-- `cluster.redis_cluster.membership_total` — сколько нод нашёл Envoy (должно быть 6)
-- `cluster.redis_cluster.upstream_internal_redirect_succeeded_total` — сколько раз Envoy сам обработал MOVED (хороший знак)
-
----
-
-## Остановка
-
-```bash
-# Envoy
-cd src_2_vm && docker compose down
-
-# Redis на всех VM
-for vm in redis-vm1 redis-vm2 redis-vm3; do
-  orb -m $vm sudo killall redis-server
-done
-
-# Удалить VM
-orb delete redis-vm1 --yes
-orb delete redis-vm2 --yes
-orb delete redis-vm3 --yes
-```
-
----
-
-## Файлы
-
-```
-REDIS_VM.md
-src_2_vm/
-  envoy.yaml            -- конфиг Envoy
-  docker-compose.yaml   -- запуск Envoy
-scripts/redis_vm/
-  setup-vm-redis.sh     -- создаёт VM и ставит Redis
-  create-cluster-vm.sh  -- собирает кластер и запускает Envoy
-  verify-task2-vm.sh    -- проверяет и чистит за собой
-```
+| Метрика | Что показывает |
+|---|---|
+| `redis.redis_proxy.command.set.success` | Успешные SET |
+| `redis.redis_proxy.command.get.success` | Успешные GET |
+| `cluster.redis_cluster.membership_total` | Сколько нод нашёл Envoy (должно быть 6) |
+| `cluster.redis_cluster.upstream_internal_redirect_succeeded_total` | Сколько раз Envoy обработал MOVED |

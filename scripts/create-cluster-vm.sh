@@ -29,7 +29,24 @@ orb -m redis-vm1 bash -c "redis-cli -p 6379 cluster nodes"
 
 echo ""
 echo "=== Запуск Envoy ==="
-cd src_2_vm && docker compose up -d
+cd src
+
+# Обновляем IP в envoy.yaml
+python3 -c "
+import re
+with open('envoy.yaml', 'r') as f:
+    content = f.read()
+ips = ['$VM1_IP', '$VM2_IP', '$VM3_IP']
+old_ips = re.findall(r'192\.168\.\d+\.\d+', content)
+for i, old in enumerate(old_ips):
+    if i < len(ips):
+        content = content.replace(old, ips[i], 1)
+with open('envoy.yaml', 'w') as f:
+    f.write(content)
+print('IP обновлены:', ips)
+"
+
+docker compose up -d
 cd ..
 
 sleep 3

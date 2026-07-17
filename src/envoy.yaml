@@ -31,7 +31,8 @@ static_resources:
       name: envoy.clusters.redis
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.clusters.redis.v3.RedisClusterConfig
-        cluster_refresh_rate: 30s
+        cluster_refresh_rate: 1s
+        cluster_refresh_timeout: 3s
         cluster_refresh_timeout: 3s
         redirect_refresh_interval: 10s
         redirect_refresh_threshold: 5
@@ -42,15 +43,15 @@ static_resources:
         - endpoint:
             address:
               socket_address:
-                address: 192.168.139.86
+                address: 192.168.139.182
                 port_value: 6379
         - endpoint:
             address:
               socket_address:
-                address: 192.168.139.59
+                address: 192.168.139.163
                 port_value: 6379
         - endpoint:
             address:
               socket_address:
-                address: 192.168.139.161
+                address: 192.168.139.100
                 port_value: 6379
