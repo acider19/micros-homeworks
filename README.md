@@ -122,19 +122,137 @@ GitLab закрывает всё: хранение кода, сборку, хр�
 
 ### Отличие от задачи 2
 
-Vector работает как более производительный и гибкий сборщик логов по сравнению с Fluent Bit.
+Vector работает как более производительный и гибкий сборщик логов по сравнению с Fluent Bit. Он собирает логи со всех контейнеров через Docker socket и отправляет в Elasticsearch, где они индексируются и доступны для поиска в Kibana.
+
+### Архитектура
+
+```
+[Clients] ──► [Nginx Gateway :80] ──┬──► [Security :3000]
+                                     ├──► [Uploader :3000] ──► [MinIO :9000]
+                                     │
+[Vector] ──docker.sock──► Docker     │
+    │                               │
+    └──► [Elasticsearch :9200] ◄────┘
+              │
+              └──► [Kibana :8081] ◄── (admin / qwerty123456)
+```
+
+### Компоненты
+
+| Компонент | Роль | Почему выбран |
+|-----------|------|---------------|
+| Vector | Сбор логов | Собирает логи со всех Docker-контейнеров через Docker socket, преобразует и отправляет в ES |
+| Elasticsearch | Хранение и индексация | Индексирует логи с маппингом полей, обеспечивает быстрый поиск |
+| Kibana | Веб-интерфейс | Визуализация логов, поиск, фильтрация, сохранённые запросы |
+| Nginx Gateway | API-шлюз | Проксирует запросы к сервисам security, uploader, storage |
+| Security | Аутентификация | JWT-токены для доступа к API |
+| Uploader | Загрузка файлов | Приём изображений и сохранение в MinIO |
+| MinIO | Хранение файлов | S3-совместимое хранилище для загруженных изображений |
+
+### Исправления при тестировании
+
+- Добавлен `VECTOR_CONFIG=/etc/vector/vector.toml` в docker-compose — без этого Vector ищет конфиг в `/etc/vector/vector.yaml`
+- Исправлен синтаксис шаблона в `bulk.index` Vector: `strftime now format` → `%F`
+- Добавлен `del(.label)` в VRL-transform — поля Docker labels содержат точки в именах (`label.com.docker.compose.project`), что вызывает конфликт маппингов в Elasticsearch
+
+### Как проверить
+
+```bash
+# Поднять стек
+cd src_4 && docker-compose up --build -d
+
+# Проверить API
+curl http://localhost/status
+curl -X POST http://localhost/v1/token -H 'Content-Type: application/json' -d '{"login":"bob","password":"qwe123"}'
+curl -X POST http://localhost/v1/upload -H 'Content-Type: application/octet-stream' --data-binary @image.jpg
+
+# Проверить Kibana
+open http://localhost:8081   # логин: admin, пароль: qwerty123456
+
+# Проверить Elasticsearch
+curl http://localhost:9200/_cat/indices?v
+
+# Остановить
+docker-compose down -v
+```
 
 ### Конфигурация
 
 - [vector.toml](src_4/vector.toml)
 - [docker-compose.yaml](src_4/docker-compose.yaml)
+- [nginx.conf](src_4/gateway/nginx.conf)
 
 ---
 
 ## Задача 5: Мониторинг (продвинутая версия) (Prometheus + Grafana + Dashboard)
 
+### Архитектура
+
+```
+[Clients] ──► [Nginx Gateway :80] ──┬──► [Security :3000] ──/metrics──►
+                                     ├──► [Uploader :3000] ──/metrics──► [Prometheus :9090]
+                                     │                                       │
+[Node Exporter :9100] ───────────────┘                                       │
+[cAdvisor :8080] ──────────────────────/metrics─────────────────────────────►│
+                                                                             │
+[Storage (MinIO) :9000] ──/minio/v2/metrics/cluster────────────────────────►│
+                                                                             │
+                                                      [Grafana :8081] ◄─────┘
+                                                      (admin / qwerty123456)
+```
+
+### Компоненты
+
+| Компонент | Роль | Почему выбран |
+|-----------|------|---------------|
+| Prometheus | Сбор метрик | Pull-модель, PromQL для запросов, автоматическое обнаружение, стандарт для микросервисов |
+| Grafana | Визуализация | Красивые графики, шаблоны дашбордов, Provisioning для автоконфигурации |
+| Node Exporter | Метрики хоста | CPU, RAM, диски, сеть — стандарт для сбора системных метрик |
+| cAdvisor | Метрики контейнеров | Потребление ресурсов каждым Docker-контейнером (CPU, RAM, сеть) |
+| Security | Метрики /metrics | Собственные метрики HTTP-запросов (счётчики, гистограммы) |
+| Uploader | Метрики /metrics | Собственные метрики HTTP-запросов и загрузок |
+| Nginx Gateway | API-шлюз | Проксирует запросы к backend-сервисам |
+
+### Исправления при тестировании
+
+- Имя сервиса minio исправлено с `minio:9000` на `storage:9000` в `prometheus.yml` — имя контейнера не совпадает с именем сервиса в docker-compose
+- Prometheus скрейпит security и uploader по порту 3000 (而不是 5000/5001)
+
+### Дашборд Grafana
+
+Dashboard показывает распределение запросов по сервисам:
+- **Requests per Service** — количество запросов по каждому сервису за 5 минут
+- **Request Duration p95** — 95-й перцентиль времени ответа по сервисам
+
+Дашборд автоматически provisioning через файл `dashboard.json`.
+
+### Как проверить
+
+```bash
+# Поднять стек
+cd src_5 && docker-compose up --build -d
+
+# Проверить API
+curl http://localhost/status
+curl -X POST http://localhost/v1/token -H 'Content-Type: application/json' -d '{"login":"bob","password":"qwe123"}'
+
+# Проверить Prometheus (таргеты)
+curl http://localhost:9090/api/v1/targets | python3 -m json.tool
+
+# Проверить Grafana
+open http://localhost:8081   # логин: admin, пароль: qwerty123456
+
+# Проверить Node Exporter
+curl -s http://localhost:9100/metrics | head -5
+
+# Остановить
+docker-compose down -v
+```
+
 ### Конфигурация
 
 - [prometheus.yml](src_5/prometheus.yml)
 - [docker-compose.yaml](src_5/docker-compose.yaml)
+- [Grafana Datasource](src_5/grafana/provisioning/datasources/datasource.yml)
+- [Grafana Dashboard Provider](src_5/grafana/provisioning/dashboards/dashboards.yml)
 - [Grafana Dashboard](src_5/grafana/provisioning/dashboards/dashboard.json)

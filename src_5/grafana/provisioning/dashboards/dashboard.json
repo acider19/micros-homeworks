@@ -1,26 +1,76 @@
 {
   "dashboard": {
+    "uid": "microservices-requests",
     "title": "Microservices Request Distribution",
+    "tags": ["microservices", "prometheus"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
     "panels": [
       {
+        "id": 1,
         "title": "Requests per Service",
-        "type": "graph",
+        "type": "timeseries",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
             "expr": "sum(rate(http_requests_total[5m])) by (job)",
-            "legendFormat": "{{job}}"
+            "legendFormat": "{{job}}",
+            "refId": "A"
           }
-        ]
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "Requests/s",
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "lineWidth": 1,
+              "pointSize": 5,
+              "showPoints": "auto"
+            }
+          }
+        }
       },
       {
+        "id": 2,
         "title": "Request Duration p95",
-        "type": "graph",
+        "type": "timeseries",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
             "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
-            "legendFormat": "{{job}}"
+            "legendFormat": "{{job}}",
+            "refId": "A"
           }
-        ]
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "Duration (s)",
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "lineWidth": 1,
+              "pointSize": 5,
+              "showPoints": "auto"
+            },
+            "unit": "s"
+          }
+        }
       }
     ]
   }

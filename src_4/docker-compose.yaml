@@ -98,5 +98,7 @@ services:
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      VECTOR_CONFIG: /etc/vector/vector.toml
     depends_on:
       - elasticsearch
