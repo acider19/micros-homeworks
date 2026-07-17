@@ -6,13 +6,13 @@
   type = "remap"
   inputs = ["docker_logs"]
   source = '''
-    .timestamp = parse_timestamp!(.timestamp, format: "%Y-%m-%dT%H:%M:%S%.fZ")
     .service = .container_name
-    .level = upcase!(.message)
+    del(.label)
+    del(.stream)
   '''
 
 [sinks.elasticsearch]
   type = "elasticsearch"
   inputs = ["parse"]
   endpoints = ["http://elasticsearch:9200"]
-  bulk.index = "vector-{{strftime now format='%Y.%m.%d'}}"
+  bulk.index = "vector-%F"
