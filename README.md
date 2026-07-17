@@ -132,10 +132,10 @@ Vector работает как более производительный и г
 ```mermaid
 flowchart LR
     subgraph api ["API"]
-        Clients --> Nginx[:80]
-        Nginx --> Security[:3000]
-        Nginx --> Uploader[:3000]
-        Uploader --> MinIO[:9000]
+        Clients --> Nginx[Nginx Gateway :80]
+        Nginx --> Security[Security :3000]
+        Nginx --> Uploader[Uploader :3000]
+        Uploader --> MinIO[MinIO :9000]
     end
 
     subgraph logs ["Сбор логов"]
@@ -198,9 +198,9 @@ docker-compose down -v
 ```mermaid
 flowchart LR
     subgraph api ["API"]
-        Clients --> Nginx[:80]
-        Nginx --> Security[:3000]
-        Nginx --> Uploader[:3000]
+        Clients --> Nginx[Nginx Gateway :80]
+        Nginx --> Security[Security :3000]
+        Nginx --> Uploader[Uploader :3000]
     end
 
     subgraph metrics ["Сбор метрик"]
